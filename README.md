@@ -5,6 +5,8 @@ This Gradio chat assistant helps customers ask about the Kaohsiung Tuku store, l
 > Course homework: Unit G, My AI Customer Service Agent, with a Database and Tools  
 > Student: F115118116 戴琨達
 
+![Main screen with a calculated order and tool trace](images/screenshot-maths.jpg)
+
 ## Who It Serves and When They Use It
 
 - **Who uses it:** Customers considering a drink purchase at the Kaohsiung Tuku store.
@@ -45,6 +47,10 @@ The following outcomes were recorded in the live 12-question test. The Gradio sc
 | 「一杯珍珠奶茶和一杯茉莉綠茶總共多少錢？」 | NT$85 | `find_drink`, `calculate_drink_order` |
 | 「請問店長叫什麼名字？」 | The information is unavailable; call 07-3552006. | `transfer_to_human` |
 | 「可以幫我寫數學作業嗎？」 | Politely declines an unrelated request. | No tool call |
+
+![Drink price lookup with tool trace](images/screenshot-in-data.jpg)
+
+![Student-discount calculation with tool trace](images/screenshot-discount.jpg)
 
 ## Project Files
 
