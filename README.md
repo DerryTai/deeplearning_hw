@@ -52,6 +52,10 @@ The following outcomes were recorded in the live 12-question test. The Gradio sc
 
 ![Student-discount calculation with tool trace](images/screenshot-discount.jpg)
 
+![Unknown manager name with staff handover trace](images/screenshot-not-in-data.jpg)
+
+![Unrelated homework request with no tool call](images/screenshot-out-of-scope.jpg)
+
 ## Project Files
 
 ```text
