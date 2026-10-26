@@ -128,6 +128,29 @@ class StoreToolsTests(unittest.TestCase):
         self.assertNotIn("已為您轉接", answer)
         self.assertIn("07-3552006", answer)
 
+    def test_english_handover_never_claims_connection(self):
+        client = FakeClient([
+            model_message(calls=[tool_call("transfer_to_human", "{}")]),
+            model_message("I've connected you to our staff."),
+        ])
+        answer, _ = run_agent([{"role": "user", "content": "I want to speak to staff"}], client, "Furen-large", self.tools)
+        self.assertNotIn("connected you", answer)
+        self.assertIn("07-3552006", answer)
+
+    def test_student_discount_requires_customer_statement(self):
+        arguments = '{"items":[{"name":"珍珠奶茶","quantity":1},{"name":"茉莉綠茶","quantity":1}],"student_discount":true}'
+        for question, expected_total in [
+            ("一杯珍珠奶茶和一杯茉莉綠茶多少錢？", 85),
+            ("我是合作學校學生，會出示學生證；一杯珍珠奶茶和一杯茉莉綠茶折扣後多少錢？", 77),
+        ]:
+            with self.subTest(question=question):
+                client = FakeClient([
+                    model_message(calls=[tool_call("calculate_drink_order", arguments)]),
+                    model_message("已計算。"),
+                ])
+                _, trace = run_agent([{"role": "user", "content": question}], client, "Furen-large", self.tools)
+                self.assertEqual(trace[0]["result"]["total"], expected_total)
+
 
 if __name__ == "__main__":
     unittest.main()

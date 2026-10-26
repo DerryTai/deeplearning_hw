@@ -35,6 +35,17 @@ Every question goes to the agent first. The agent selects an allowed tool, which
 | `shop_info` | `my_shop_info.csv` | `topic`, `content` | 8 |
 | `drinks` | `my_menu.csv` | `item_id`, `category`, `name`, `price`, `available` | 82 |
 
+## Sample Conversations
+
+The following outcomes were recorded in the live 12-question test. The Gradio screen shows each answer beside its tool trace.
+
+| Customer asks | Recorded answer or outcome | Tool trace |
+|---|---|---|
+| 「珍珠奶茶多少錢？」 | NT$55 | `find_drink` |
+| 「一杯珍珠奶茶和一杯茉莉綠茶總共多少錢？」 | NT$85 | `find_drink`, `calculate_drink_order` |
+| 「請問店長叫什麼名字？」 | The information is unavailable; call 07-3552006. | `transfer_to_human` |
+| 「可以幫我寫數學作業嗎？」 | Politely declines an unrelated request. | No tool call |
+
 ## Project Files
 
 ```text

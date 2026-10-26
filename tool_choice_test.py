@@ -38,6 +38,11 @@ def grade_tool_choice(used, expected):
     return set(expected).issubset(used) if expected else not used
 
 
+def safe_error_label(error):
+    """Avoid recording response bodies, which may echo fragments of credentials."""
+    return type(error).__name__
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--delay", type=float, default=10, help="Seconds between questions for API rate limits")
@@ -63,7 +68,7 @@ def main():
             except Exception as error:
                 result = {"question": question, "expected": sorted(expected), "used": [],
                           "answer": "", "trace": [], "passed": False,
-                          "error": f"{type(error).__name__}: {error}"}
+                          "error": safe_error_label(error)}
             results.append(result)
             print(f"{'OK' if result['passed'] else 'MISS'} {number:02d}/{len(CASES)} expected={result['expected']} used={result['used']} question={question}", flush=True)
             if "error" in result:

@@ -145,6 +145,23 @@ SAFE_FALLBACK = "抱歉，我目前無法根據已確認的資料回答。請稍
 OUT_OF_SCOPE = "我只能協助 50嵐高雄土庫店的門市與飲料問題；歡迎詢問營業時間、飲料價格或訂單金額。"
 
 
+def explicit_student_eligibility(chat_history):
+    """Allow the discount only after the customer explicitly mentions both conditions."""
+    parts = []
+    for message in chat_history:
+        if message.get("role") != "user":
+            continue
+        content = message.get("content", "")
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, list):
+            parts.extend(item.get("text", "") for item in content if isinstance(item, dict))
+    customer_text = "\n".join(parts).lower()
+    return ("合作學校" in customer_text and "學生證" in customer_text) or (
+        "partner school" in customer_text and ("student id" in customer_text or "student card" in customer_text)
+    )
+
+
 def run_agent(chat_history, client, model, tools, max_steps=6):
     """Return (answer, visible tool trace), rejecting untrusted model tool requests."""
     if not chat_history or chat_history[-1].get("role") != "user":
@@ -168,9 +185,18 @@ def run_agent(chat_history, client, model, tools, max_steps=6):
                 return OUT_OF_SCOPE, trace
             answer = (message.content or SAFE_FALLBACK).strip()
             handovers = [entry for entry in trace if entry["tool"] == "transfer_to_human" and entry["result"].get("ok")]
-            if handovers and re.search(r"已.{0,8}(?:轉接|連線|接通)", answer):
+            false_connection = re.search(r"已.{0,8}(?:轉接|連線|接通)", answer) or re.search(
+                r"(?:i(?:'ve| have)|we(?:'ve| have)).{0,20}(?:connect|transfer|put you through)|you(?:'re| are).{0,15}(?:connected|transferred)",
+                answer, flags=re.IGNORECASE,
+            )
+            if handovers and false_connection:
                 phone = handovers[-1]["result"]["phone"]
-                answer = f"目前無法在聊天室直接轉接真人；請撥打 {phone} 洽詢門市人員。"
+                latest = chat_history[-1].get("content", "")
+                if isinstance(latest, list):
+                    latest = " ".join(item.get("text", "") for item in latest if isinstance(item, dict))
+                answer = (f"目前無法在聊天室直接轉接真人；請撥打 {phone} 洽詢門市人員。"
+                          if re.search(r"[\u4e00-\u9fff]", latest) else
+                          f"I cannot connect you to staff in this chat. Please call the store at {phone}.")
             return answer, trace
         messages.append({"role": "assistant", "content": message.content or "", "tool_calls": [
             {"id": call.id, "type": "function", "function": {"name": call.function.name, "arguments": call.function.arguments}}
@@ -184,6 +210,8 @@ def run_agent(chat_history, client, model, tools, max_steps=6):
                 arguments = json.loads(call.function.arguments or "{}")
                 if not isinstance(arguments, dict):
                     raise ValueError("invalid_arguments")
+                if name == "calculate_drink_order" and arguments.get("student_discount") is True:
+                    arguments["student_discount"] = explicit_student_eligibility(chat_history)
                 result = functions[name](**arguments)
             except (ValueError, TypeError, KeyError) as error:
                 result = {"ok": False, "reason": str(error)}
