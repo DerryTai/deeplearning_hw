@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent_core import StoreTools, build_database, run_agent
+from agent_core import StoreTools, build_database, run_agent, explicit_student_eligibility
 
 
 class FakeClient:
@@ -30,6 +30,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StoreToolsTests(unittest.TestCase):
+    def test_student_eligibility_rejects_questions_denials_and_retractions(self):
+        for question in ['合作學校學生出示學生證有折扣嗎？', '我不是合作學校學生，也沒有學生證',
+                         'Does a partner school student ID get a discount?', 'I am not from a partner school and have no student ID']:
+            self.assertFalse(explicit_student_eligibility([{'role':'user', 'content':question}]))
+        history = [{'role':'user','content':'我是合作學校學生，會出示學生證。'},
+                   {'role':'user','content':'更正，我沒有學生證。'}]
+        self.assertFalse(explicit_student_eligibility(history))
+
+    def test_no_tool_clarification_is_not_replaced_with_off_topic_refusal(self):
+        client = FakeClient([model_message('請問您要哪款飲料、幾杯呢？')])
+        answer, trace = run_agent([{'role':'user','content':'幫我算飲料總價'}], client, 'unit-model', self.tools)
+        self.assertIn('幾杯', answer)
+        self.assertEqual(trace, [])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp.name) / "shop.db"

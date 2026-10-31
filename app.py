@@ -4,6 +4,7 @@ Run: python app.py
 """
 
 import json
+import argparse
 import os
 from pathlib import Path
 
@@ -11,11 +12,11 @@ import gradio as gr
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from agent_core import StoreTools, build_database, run_agent
+from agent_core import GREETING, StoreTools, build_database, run_agent
+from rag_core import BrandRAG
 
 
 ROOT = Path(__file__).resolve().parent
-GREETING = "您好！我是 50嵐高雄土庫店的線上客服。可以詢問營業時間、飲料價格或訂單金額；我會用店家資料查詢後回答。"
 EMPTY_TRACE = "### 工具軌跡\n\n尚未呼叫工具。"
 
 
@@ -29,12 +30,15 @@ def format_trace(trace):
     lines = ["### 工具軌跡"]
     for entry in trace:
         arguments = json.dumps(entry["arguments"], ensure_ascii=False)
-        result = json.dumps(entry["result"], ensure_ascii=False)
+        summary = {key: value for key, value in entry['result'].items() if key != 'chunks'}
+        result = json.dumps(summary, ensure_ascii=False)
         lines.extend([
             f"**第 {entry['step']} 步：{entry['tool']}**",
             f"參數：`{arguments}`",
             f"結果：`{result}`",
         ])
+        for chunk in entry['result'].get('chunks', []):
+            lines.append(f"**{chunk['title']}** · 相似度 {chunk['score']:.3f} · {chunk['source']}\n\n{chunk['text']}")
     return "\n\n".join(lines)
 
 
@@ -53,20 +57,34 @@ def answer_question(history, tools, client, model):
         return history + [{"role": "assistant", "content": "目前無法連線至客服模型，請稍後再試。"}], f"### 工具軌跡\n\n系統錯誤：`{type(error).__name__}`"
 
 
-def create_app():
+def replay_evidence(case):
+    """Show a recorded real model conversation for report capture; never synthesize replies."""
+    records = json.loads((ROOT / 'evidence' / 'midterm_results.json').read_text(encoding='utf-8'))['agent']
+    record = next(row for row in records if row['name'] == case)
+    history = start_chat() + [{'role': 'user', 'content': record['question']}, {'role': 'assistant', 'content': record['answer']}]
+    return history, format_trace(record['trace'])
+
+
+def create_app(replay=False):
     load_dotenv(ROOT / ".env")
     connection = build_database(ROOT / "shop_app.db", ROOT / "my_shop_info.csv", ROOT / "my_menu.csv")
-    tools = StoreTools(connection)
     key = os.getenv("API_KEY")
     endpoint = os.getenv("LLM_API_URL", "https://www.iai.nkust.edu.tw/aihub/v1/")
     model = os.getenv("MODEL_NAME", "Furen-large")
-    client = OpenAI(api_key=key or "missing-key", base_url=endpoint, timeout=60.0)
+    client = OpenAI(api_key=key or "missing-key", base_url=endpoint, timeout=60.0, max_retries=1)
+    embed_client = OpenAI(api_key=os.getenv('EMBEDDING_API_KEY') or key or 'missing-key',
+                          base_url=os.getenv('EMBEDDING_API_URL') or endpoint, timeout=60.0, max_retries=1)
+    rag = BrandRAG(ROOT / '關於50嵐.txt', embed_client, os.getenv('EMBEDDING_MODEL_NAME') or 'Embedding',
+                   cache_path=ROOT / '.cache' / 'rag-index.json')
+    tools = StoreTools(connection, rag=rag)
 
     with gr.Blocks(title="50嵐高雄土庫店線上客服") as demo:
-        gr.Markdown("# 50嵐高雄土庫店線上客服\n從資料庫查詢店家資訊與飲料，訂單金額由程式計算。右側顯示每次使用的工具。")
+        gr.Markdown("# 50嵐客服 Agent + RAG\n課堂模擬專案｜價格與金額查資料庫，品牌與活動資訊檢索文件。右側顯示工具、來源片段與相似度。")
+        if replay:
+            gr.Markdown('報告取證模式：重播已保存的 NKUST 真實測試對話。')
         with gr.Row():
             with gr.Column(scale=3):
-                chat = gr.Chatbot(value=start_chat(), height=470, label="客服對話")
+                chat = gr.Chatbot(value=start_chat(), height=580, label="客服對話")
                 with gr.Row():
                     user_box = gr.Textbox(placeholder="請輸入飲料、門市或價格問題", show_label=False, scale=7)
                     send = gr.Button("送出", variant="primary")
@@ -79,6 +97,11 @@ def create_app():
                         "一杯珍珠奶茶和一杯茉莉綠茶總共多少錢？",
                         "我是合作學校學生，會出示學生證；一杯珍珠奶茶和一杯茉莉綠茶折扣後多少錢？",
                         "請問有外送嗎？",
+                        "2026冬季買奶茶送禮有什麼條件？外送也可以嗎？",
+                        "燕麥奶什麼時候開賣？可以替換哪些飲品？",
+                        "50嵐從哪裡開始？高雄區客服怎麼聯絡？",
+                        "買奶茶送禮活動外送能參加嗎？另外珍珠奶茶一杯多少錢？",
+                        "請問店長的名字叫什麼？",
                         "我要找店員。",
                     ],
                     inputs=user_box,
@@ -92,8 +115,16 @@ def create_app():
                 inputs=chat, outputs=[chat, trace_panel],
             )
         clear.click(lambda: (start_chat(), "", EMPTY_TRACE), outputs=[chat, user_box, trace_panel])
+        if replay:
+            def load_replay(request: gr.Request):
+                return replay_evidence(request.query_params.get('case', 'database'))
+            demo.load(load_replay, outputs=[chat, trace_panel])
     return demo
 
 
 if __name__ == "__main__":
-    create_app().launch()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--replay-evidence', action='store_true')
+    parser.add_argument('--port', type=int, default=7860)
+    args = parser.parse_args()
+    create_app(replay=args.replay_evidence).launch(server_name='127.0.0.1', server_port=args.port)

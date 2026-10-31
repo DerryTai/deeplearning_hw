@@ -9,3 +9,9 @@ dist/
 .pytest_cache/
 .superpowers/
 evidence/
+.cache/
+tmp/
+.publish-repo/
+w07-*/
+w08-1-*/
+output/
